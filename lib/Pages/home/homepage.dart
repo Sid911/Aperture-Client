@@ -1,4 +1,6 @@
 import 'package:aperture/Pages/folders/folders_page.dart';
+import 'package:aperture/Pages/home/barcode.dart';
+import 'package:aperture/Pages/home/dialogs.dart';
 import 'package:aperture/Pages/tasks/tasks_widget.dart';
 import 'package:aperture/Services/database/database_service.dart';
 import 'package:aperture/Services/server_sync/server_sync_impl.dart';
@@ -8,6 +10,7 @@ import 'package:hive_flutter/adapters.dart';
 import 'package:provider/provider.dart';
 
 import '../../Services/database/directory_data.dart';
+import '../../Utils/device_info.dart';
 import 'connect.dart';
 
 class HomePage extends StatefulWidget {
@@ -22,6 +25,32 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage>
     with SingleTickerProviderStateMixin {
   late AnimationController animationController;
+  String? barcodeResult = "";
+
+  Future<void> handleConnection(
+      BuildContext context, ServerSyncService syncService) async {
+    final info = await getDeviceInfo();
+    final res = await syncService.tryConnect(
+      ip: barcodeResult!,
+      deviceID: info.deviceModelName,
+      deviceName: info.deviceName,
+    );
+    if (res) {
+      await showPinInputDialog(
+        context: context,
+        deviceName: info.deviceName,
+        deviceID: info.deviceModelName,
+        ip: barcodeResult!.trim(),
+      );
+    } else {
+      showExtendedInputDialog(
+        context: context,
+        deviceName: info.deviceName,
+        deviceID: info.deviceModelName,
+        ip: barcodeResult!.trim(),
+      );
+    }
+  }
 
   Future<String?> selectFolder(BuildContext context) async {
     String? result = await FilePicker.platform.getDirectoryPath();
@@ -30,7 +59,7 @@ class _HomePageState extends State<HomePage>
       return result;
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No folder selected')),
+        const SnackBar(content: Text('No folder selected')),
       );
       return null;
     }
@@ -66,11 +95,13 @@ class _HomePageState extends State<HomePage>
                       MaterialPageRoute(
                         builder: (context) {
                           return ValueListenableBuilder<Box<DirectoryData>>(
-                            valueListenable: Hive.box<DirectoryData>("dirs").listenable(),
-                            builder: (context, box, _) {
-                              return DirectoriesPage(directories: box.values.toList(growable: false));
-                            }
-                          );
+                              valueListenable:
+                                  Hive.box<DirectoryData>("dirs").listenable(),
+                              builder: (context, box, _) {
+                                return DirectoriesPage(
+                                    directories:
+                                        box.values.toList(growable: false));
+                              });
                         },
                       ),
                     );
@@ -117,7 +148,49 @@ class _HomePageState extends State<HomePage>
                   children: <Widget>[
                     ServerState(connectedState: syncService.state),
                     if (!syncService.state.connected) ...{
-                      const ConnectServer()
+                      const ConnectServer(),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          borderRadius: BorderRadius.circular(0),
+                        ),
+                        padding: const EdgeInsets.all(5),
+                        margin: const EdgeInsets.symmetric(vertical: 10),
+                        child: ElevatedButton(
+                          onPressed: () async {
+                            Navigator.of(context)
+                                .push(
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const BarcodeScannerWithZoom(),
+                              ),
+                            )
+                                .then((value) {
+                              if (value != null) {
+                                setState(() {
+                                  barcodeResult = value;
+                                });
+                                handleConnection(context, syncService);
+                              } else {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(const SnackBar(
+                                  content: Text("No Qr Code scanned"),
+                                ));
+                              }
+                            });
+                          },
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text('Connect With'),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                                child: Icon(Icons.qr_code),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
                     },
                     const TasksWidget(),
                   ],
@@ -128,7 +201,7 @@ class _HomePageState extends State<HomePage>
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final res = await selectFolder(context);
-          if (res!=null) {
+          if (res != null) {
             final name = res.split("/").last;
             dbService.addDirectory(name, res);
             print("${name} or ${res}");

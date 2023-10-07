@@ -49,6 +49,8 @@ dependencies:
   mime: ^1.0.4
   json_annotation: ^4.8.1
   crypto: ^3.0.3
+  mobile_scanner: ^3.4.1
+  image_picker: ^1.0.4
 
 dev_dependencies:
   flutter_test:
